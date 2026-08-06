@@ -1,0 +1,14 @@
+{
+  "name": "xiaoe-replay-tool",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Download and decrypt Xiaoe/XET ended live replay videos into playable files.",
+  "bin": {
+    "xiaoe-replay": "./download-replays.mjs",
+    "xiaoe-replay-rename": "./rename-downloads.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

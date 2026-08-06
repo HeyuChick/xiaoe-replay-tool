@@ -1,0 +1,23 @@
+# Sensitive / local capture data
+*.har
+*.pcap
+cookies.txt
+.env
+.env.*
+!.env.example
+
+# Downloaded media, keys and local outputs
+downloads/
+output/
+audit-study/
+tool-test*/
+*.ts
+*.mp4
+*.m3u8
+*.key
+*.bin
+*.log
+
+# Node
+node_modules/
+npm-debug.log*

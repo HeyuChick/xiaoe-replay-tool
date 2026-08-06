@@ -10,8 +10,12 @@
 4. 按顺序合并为 `.ts`；若本机有 `ffmpeg`，`--format mp4` 会无损 remux 为 `.mp4`。
 5. 图文资源通过 `get.detail/2.0.0` 获取 `org_content`，保存 HTML 并下载其中的图片。
 
-每个回放目录使用 `<序号>-<标题>-<alive_id>` 命名，序号与 `manifest.json` 的数组顺序一致，
-例如 `00-示例章节一-l_xxx`、`01-示例章节二-l_xxx`，方便按文件名排序。
+直播回放和图文素材分开存储：
+
+- `live_replays/00-示例章节一-l_xxx`
+- `image_text/00-示例素材-i_xxx`
+
+两类目录各自独立从 `00` 开始编号，方便按文件名排序。
 
 课程目录里 `is_lookback=1` 的直播如果尚未结束，`get_lookback_list` 会返回空，工具会标记
 `no_replay` 并跳过；只有真正已生成回放的场次才会下载。用 `--dry-run` 可以提前确认哪些可用。
@@ -74,17 +78,22 @@ node download-replays.mjs --har your-capture.har --dry-run
 
 ## 重命名已有下载
 
-如果之前下载的目录没有序号前缀，可以按现有 manifest 顺序批量重命名：
+如果之前下载的目录还是旧平铺结构，可以按现有 manifest 顺序批量迁移：
 
 ```bash
 node rename-downloads.mjs --manifest ./downloads/manifest.json --out ./downloads
 ```
 
-脚本会更新 `manifest.json` 中的 `index`、`prefix`、`dir` 以及媒体文件路径。
+脚本会把目录迁移到 `live_replays/` 或 `image_text/`，重置每类独立序号，并更新
+根 `manifest.json`、子目录 `manifest.json` 以及媒体文件路径。
 
 ## 输出
 
-直播输出到 `--out/<序号>-<标题>-<alive_id>/` 下，文件名默认为 `.ts`（VLC/ffplay 可直接播放）；`--format mp4` 成功时输出 `.mp4`。图文输出到对应目录下的 `index.html` 和 `images/`。全部结果写入 `--out/manifest.json`。
+直播输出到 `--out/live_replays/<序号>-<标题>-<alive_id>/`，文件名默认为 `.ts`
+（VLC/ffplay 可直接播放）；`--format mp4` 成功时输出 `.mp4`。图文输出到
+`--out/image_text/<序号>-<标题>-<resource_id>/` 下的 `index.html` 和 `images/`。
+
+根目录 `manifest.json` 包含全部资源；每个分类子目录下也有独立的 `manifest.json`。
 
 直播下载前会检查对应目录中是否已有同名 `.mp4`；存在则标记为 `skipped` 并跳过，
 避免重复下载。`--force` 可强制重新下载。

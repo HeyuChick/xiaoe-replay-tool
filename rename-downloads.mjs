@@ -7,8 +7,17 @@ const HELP = `
 Usage:
   node rename-downloads.mjs --manifest path/to/manifest.json --out path/to/downloads
 
-Renames downloaded folders to "<NN>-<title>-<alive_id>" using the order in manifest.json.
+Moves downloaded folders into:
+  <out>/live_replays/<NN>-<title>-<alive_id>
+  <out>/image_text/<NN>-<title>-<resource_id>
+
+Each category has its own 00/01/02... numbering.
 `;
+
+const CATEGORY_DIRS = {
+  live: "live_replays",
+  "image-text": "image_text",
+};
 
 function parseArgs(argv) {
   const opts = { manifest: "manifest.json", out: ".", help: false };
@@ -25,11 +34,20 @@ function parseArgs(argv) {
 }
 
 function sanitizeName(value) {
-  return String(value || "replay")
+  return String(value || "resource")
     .replace(/[\\/:*?"<>|\r\n\t]+/g, "_")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 120);
+}
+
+function categoryOf(entry) {
+  if (entry.category === "live" || entry.category === "image-text") return entry.category;
+  return Number(entry.resource_type) === 1 ? "image-text" : "live";
+}
+
+function resourceIdOf(entry) {
+  return entry.alive_id || entry.resource_id;
 }
 
 async function pathExists(p) {
@@ -53,6 +71,25 @@ function rewriteOutputPath(oldDir, newDir, outputPath) {
   return outputPath;
 }
 
+async function findDirectoryByResourceId(out, categoryDir, resourceId) {
+  const roots = [out, path.join(out, categoryDir)];
+  for (const root of roots) {
+    let entries;
+    try {
+      entries = await fs.readdir(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const item of entries) {
+      if (!item.isDirectory()) continue;
+      if (item.name.endsWith(`-${resourceId}`)) {
+        return path.join(root, item.name);
+      }
+    }
+  }
+  return null;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
@@ -62,19 +99,28 @@ async function main() {
 
   const manifestRaw = await fs.readFile(opts.manifest, "utf8");
   const manifest = JSON.parse(manifestRaw);
-  const width = Math.max(2, String(Math.max(0, manifest.length - 1)).length);
+  const counters = { live: 0, "image-text": 0 };
+
+  for (const entry of manifest) {
+    entry.category = categoryOf(entry);
+    entry.prefix = String(counters[entry.category]++).padStart(2, "0");
+  }
+
   const renamed = [];
   const missing = [];
-
   for (let index = 0; index < manifest.length; index++) {
     const entry = manifest[index];
-    const prefix = String(index).padStart(width, "0");
-    const title = sanitizeName(entry.title || entry.alive_id);
-    const resourceId = entry.alive_id || entry.resource_id;
-    const newDir = path.join(opts.out, `${prefix}-${title}-${resourceId}`);
+    const category = entry.category;
+    const prefix = entry.prefix;
+    const resourceId = resourceIdOf(entry);
+    const title = sanitizeName(entry.title || resourceId);
+    const categoryDir = CATEGORY_DIRS[category];
+    const newDir = path.join(opts.out, categoryDir, `${prefix}-${title}-${resourceId}`);
 
     const candidates = [];
     if (entry.dir) candidates.push(entry.dir);
+    candidates.push(newDir);
+    candidates.push(path.join(opts.out, `${prefix}-${title}-${resourceId}`));
     candidates.push(path.join(opts.out, `${title}-${resourceId}`));
 
     let oldDir = null;
@@ -85,18 +131,8 @@ async function main() {
         break;
       }
     }
-
     if (!oldDir) {
-      const entries = await fs.readdir(opts.out, { withFileTypes: true });
-      for (const item of entries) {
-        if (!item.isDirectory()) continue;
-        const full = path.join(opts.out, item.name);
-        if (full === newDir) continue;
-        if (item.name.endsWith(`-${resourceId}`)) {
-          oldDir = full;
-          break;
-        }
-      }
+      oldDir = await findDirectoryByResourceId(opts.out, categoryDir, resourceId);
     }
 
     entry.index = index;
@@ -106,9 +142,9 @@ async function main() {
     if (oldDir && oldDir !== newDir) {
       if (await pathExists(newDir)) {
         console.log(`SKIP ${index}: target exists ${newDir}`);
-        entry.dir = newDir;
         continue;
       }
+      await fs.mkdir(path.dirname(newDir), { recursive: true });
       await fs.rename(oldDir, newDir);
       entry.output_ts = rewriteOutputPath(oldDir, newDir, entry.output_ts);
       entry.output_mp4 = rewriteOutputPath(oldDir, newDir, entry.output_mp4);
@@ -119,7 +155,19 @@ async function main() {
     }
   }
 
+  await fs.mkdir(path.join(opts.out, CATEGORY_DIRS.live), { recursive: true });
+  await fs.mkdir(path.join(opts.out, CATEGORY_DIRS["image-text"]), { recursive: true });
   await fs.writeFile(opts.manifest, JSON.stringify(manifest, null, 2), "utf8");
+
+  for (const category of ["live", "image-text"]) {
+    const entries = manifest.filter((entry) => entry.category === category);
+    await fs.writeFile(
+      path.join(opts.out, CATEGORY_DIRS[category], "manifest.json"),
+      JSON.stringify(entries, null, 2),
+      "utf8",
+    );
+  }
+
   console.log(`Renamed ${renamed.length} folder(s), missing ${missing.length}`);
   for (const item of renamed) {
     console.log(`${item.index}: ${item.oldDir} -> ${item.newDir}`);

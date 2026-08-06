@@ -36,10 +36,14 @@ as `no_replay` and skips it.
 
 ## Folder Naming
 
-Downloaded folders use `<NN>-<title>-<resource_id>` where `NN` is the zero-padded
-index from `manifest.json` array order, for example `00-...`, `01-...`. Live
-replays come first, followed by image-text resources. This keeps folders sorted
-in the same order as the manifest and is stable for downstream scripts.
+Downloaded folders are split by category:
+
+- `live_replays/<NN>-<title>-<alive_id>`
+- `image_text/<NN>-<title>-<resource_id>`
+
+Each category has its own zero-padded `00/01/02...` numbering. Root
+`manifest.json` lists all resources, and each category folder contains its own
+`manifest.json`.
 
 `rename-downloads.mjs` can be used to rename an existing downloads directory to
 this convention from its current `manifest.json`.

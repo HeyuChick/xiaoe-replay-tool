@@ -18,6 +18,8 @@ const LOOKBACK_ENDPOINT = "/_alive/v3/get_lookback_list";
 const IMAGE_TEXT_DETAIL_ENDPOINT = "/xe.course.business_go.get.detail/2.0.0";
 const RICHTEXT_INFO_ENDPOINT = "/xe.richtext.info.get_by_signature.bath";
 const RICHTEXT_MATERIAL_ENDPOINT = "/xe.richtext.material.info.get_by_signature.bath";
+const LIVE_DIR = "live_replays";
+const IMAGE_TEXT_DIR = "image_text";
 
 const HELP = `
 Usage:
@@ -471,15 +473,20 @@ async function fetchRichTextContent(signature, opts) {
 async function downloadImageText(resource, opts) {
   const safeTitle = sanitizeName(resource.title);
   const index = Number.isInteger(resource.index) ? resource.index : 0;
-  const width = Math.max(2, String(index).length);
-  const prefix = String(index).padStart(width, "0");
-  const dir = path.join(opts.out, `${prefix}-${safeTitle || resource.aliveId}-${resource.aliveId}`);
+  const prefix = resource.prefix || String(index).padStart(2, "0");
+  const category = "image-text";
+  const dir = path.join(
+    opts.out,
+    IMAGE_TEXT_DIR,
+    `${prefix}-${safeTitle || resource.aliveId}-${resource.aliveId}`,
+  );
   const imagesDir = path.join(dir, "images");
   await fs.mkdir(imagesDir, { recursive: true });
 
   const result = {
     index,
     prefix,
+    category,
     resource_type: 1,
     resource_id: resource.aliveId,
     title: resource.title,
@@ -665,15 +672,20 @@ async function remuxToMp4(tsPath, mp4Path, ffmpegPath) {
 async function downloadReplay(alive, opts) {
   const safeTitle = sanitizeName(alive.title);
   const index = Number.isInteger(alive.index) ? alive.index : 0;
-  const width = Math.max(2, String(index).length);
-  const prefix = String(index).padStart(width, "0");
-  const replayDir = path.join(opts.out, `${prefix}-${safeTitle || alive.aliveId}-${alive.aliveId}`);
+  const prefix = alive.prefix || String(index).padStart(2, "0");
+  const category = "live";
+  const replayDir = path.join(
+    opts.out,
+    LIVE_DIR,
+    `${prefix}-${safeTitle || alive.aliveId}-${alive.aliveId}`,
+  );
   const tmpDir = path.join(replayDir, ".segments");
   await fs.mkdir(tmpDir, { recursive: true });
 
   const result = {
     index,
     prefix,
+    category,
     alive_id: alive.aliveId,
     title: alive.title,
     dir: replayDir,
@@ -838,8 +850,11 @@ async function main() {
 
   await fs.mkdir(opts.out, { recursive: true });
   const results = [];
+  const counters = { live: 0, "image-text": 0 };
   for (let index = 0; index < replays.length; index++) {
-    const replay = { ...replays[index], index };
+    const category = replays[index].resourceType === 1 ? "image-text" : "live";
+    const prefix = String(counters[category]++).padStart(2, "0");
+    const replay = { ...replays[index], index, category, prefix };
     console.log(`[START] ${index} ${replay.aliveId} ${replay.title}`);
     const result =
       replay.resourceType === 1

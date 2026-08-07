@@ -96,4 +96,5 @@ node rename-downloads.mjs --manifest ./downloads/manifest.json --out ./downloads
 根目录 `manifest.json` 包含全部资源；每个分类子目录下也有独立的 `manifest.json`。
 
 直播下载前会检查对应目录中是否已有同名 `.mp4`；存在则标记为 `skipped` 并跳过，
-避免重复下载。`--force` 可强制重新下载。临时 `.segments` 目录会在下载结束或跳过时自动清理。
+避免重复下载。图文下载前会检查对应目录中是否已有 `index.html`；存在也会标记为
+`skipped` 并跳过。`--force` 可强制重新下载。临时 `.segments` 目录会在下载结束或跳过时自动清理。

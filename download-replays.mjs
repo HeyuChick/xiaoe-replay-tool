@@ -481,7 +481,6 @@ async function downloadImageText(resource, opts) {
     `${prefix}-${safeTitle || resource.aliveId}-${resource.aliveId}`,
   );
   const imagesDir = path.join(dir, "images");
-  await fs.mkdir(imagesDir, { recursive: true });
 
   const result = {
     index,
@@ -496,6 +495,19 @@ async function downloadImageText(resource, opts) {
     output_html: null,
     images: 0,
   };
+
+  if (!opts.force) {
+    const htmlPath = path.join(dir, "index.html");
+    try {
+      await fs.access(htmlPath);
+      result.status = "skipped";
+      result.output_html = htmlPath;
+      console.log(`[SKIP] ${resource.aliveId} ${resource.title}: index.html already exists`);
+      return result;
+    } catch {
+      // index.html does not exist, continue downloading
+    }
+  }
 
   try {
     const detail = await apiForm(
@@ -516,6 +528,7 @@ async function downloadImageText(resource, opts) {
       result.error = "Empty image-text content";
       return result;
     }
+    await fs.mkdir(imagesDir, { recursive: true });
 
     const assetUrls = extractAssetUrls(html);
     const used = new Set();

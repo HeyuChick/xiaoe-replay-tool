@@ -37,6 +37,8 @@ as `no_replay` and skips it.
     unavailable or `--format ts` is requested.
 11. Temporary `.segments` directories are removed after download, skip, or
     `no_replay` handling.
+12. Image-text resources are skipped when `index.html` already exists unless
+    `--force` is passed.
 
 ## Folder Naming
 

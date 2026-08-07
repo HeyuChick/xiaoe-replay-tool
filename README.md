@@ -89,11 +89,11 @@ node rename-downloads.mjs --manifest ./downloads/manifest.json --out ./downloads
 
 ## 输出
 
-直播输出到 `--out/live_replays/<序号>-<标题>-<alive_id>/`，文件名默认为 `.ts`
-（VLC/ffplay 可直接播放）；`--format mp4` 成功时输出 `.mp4`。图文输出到
+直播输出到 `--out/live_replays/<序号>-<标题>-<alive_id>/`，默认转封装为 `.mp4`；
+只有本机没有 ffmpeg 或显式使用 `--format ts` 时才会保留 `.ts`。图文输出到
 `--out/image_text/<序号>-<标题>-<resource_id>/` 下的 `index.html` 和 `images/`。
 
 根目录 `manifest.json` 包含全部资源；每个分类子目录下也有独立的 `manifest.json`。
 
 直播下载前会检查对应目录中是否已有同名 `.mp4`；存在则标记为 `skipped` 并跳过，
-避免重复下载。`--force` 可强制重新下载。
+避免重复下载。`--force` 可强制重新下载。临时 `.segments` 目录会在下载结束或跳过时自动清理。

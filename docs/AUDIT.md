@@ -33,6 +33,10 @@ as `no_replay` and skips it.
    `org_content` HTML is saved and referenced images are downloaded locally.
 9. Live replays are skipped when their target `.mp4` already exists unless
    `--force` is passed.
+10. The default output format is `.mp4`; `.ts` is kept only when ffmpeg is
+    unavailable or `--format ts` is requested.
+11. Temporary `.segments` directories are removed after download, skip, or
+    `no_replay` handling.
 
 ## Folder Naming
 

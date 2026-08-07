@@ -153,6 +153,8 @@ async function main() {
     } else if (!(await pathExists(newDir))) {
       missing.push({ index, newDir });
     }
+
+    await fs.rm(path.join(newDir, ".segments"), { recursive: true, force: true }).catch(() => {});
   }
 
   await fs.mkdir(path.join(opts.out, CATEGORY_DIRS.live), { recursive: true });

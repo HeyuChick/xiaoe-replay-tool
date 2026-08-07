@@ -42,7 +42,7 @@ Download:
   --concurrency 8                  Segment download concurrency
   --max-segments 0                 Limit segments per replay (0 = all)
   --limit 0                        Limit number of resources (0 = all)
-  --format ts|mp4                  mp4 requires ffmpeg or --ffmpeg path
+  --format ts|mp4                  Output format (default: mp4)
   --ffmpeg /path/to/ffmpeg         Optional explicit ffmpeg
   --force                          Re-download even when mp4 already exists
   --list-endpoint /path            Override catalog endpoint
@@ -65,7 +65,7 @@ function parseArgs(argv) {
     concurrency: 8,
     maxSegments: 0,
     limit: 0,
-    format: "ts",
+    format: "mp4",
     ffmpeg: "",
     force: false,
     listEndpoint: CATALOG_ENDPOINT,
@@ -680,7 +680,6 @@ async function downloadReplay(alive, opts) {
     `${prefix}-${safeTitle || alive.aliveId}-${alive.aliveId}`,
   );
   const tmpDir = path.join(replayDir, ".segments");
-  await fs.mkdir(tmpDir, { recursive: true });
 
   const result = {
     index,
@@ -704,6 +703,7 @@ async function downloadReplay(alive, opts) {
       result.status = "skipped";
       result.output_mp4 = mp4Path;
       console.log(`[SKIP] ${alive.aliveId} ${alive.title}: mp4 already exists`);
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       return result;
     } catch {
       // mp4 does not exist, continue downloading
@@ -716,8 +716,10 @@ async function downloadReplay(alive, opts) {
       result.status = "no_replay";
       result.error = "No replay available yet";
       console.log(`[SKIP] ${alive.aliveId} ${alive.title}: no replay yet`);
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       return result;
     }
+    await fs.mkdir(tmpDir, { recursive: true });
     result.m3u8_url = m3u8Url;
     log(opts, "  m3u8:", m3u8Url);
 

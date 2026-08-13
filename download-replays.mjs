@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import { createReadStream, createWriteStream, readFileSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import https from "node:https";
+import http from "node:http";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -223,6 +225,73 @@ function extractFromHar(harPath) {
   };
 }
 
+class AuthError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+
+function nodeRequest(targetUrl, { method = "GET", headers = {}, body = null, maxRedirects = 5 } = {}) {
+  return new Promise((resolve, reject) => {
+    let target;
+    try {
+      target = new URL(targetUrl);
+    } catch {
+      reject(new Error(`Invalid URL: ${targetUrl}`));
+      return;
+    }
+    const lib = target.protocol === "https:" ? https : http;
+    const reqHeaders = { ...headers };
+    const bodyBuf = body == null ? null : Buffer.isBuffer(body) ? body : Buffer.from(String(body));
+    if (bodyBuf && !reqHeaders["content-length"] && !reqHeaders["Content-Length"]) {
+      reqHeaders["content-length"] = bodyBuf.length;
+    }
+    const req = lib.request(
+      {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port || (target.protocol === "https:" ? 443 : 80),
+        path: target.pathname + target.search,
+        method,
+        headers: reqHeaders,
+      },
+      (res) => {
+        if (
+          [301, 302, 303, 307, 308].includes(res.statusCode) &&
+          res.headers.location &&
+          maxRedirects > 0
+        ) {
+          res.resume();
+          const nextUrl = new URL(res.headers.location, target).toString();
+          nodeRequest(nextUrl, {
+            method: res.statusCode === 303 ? "GET" : method,
+            headers,
+            body: res.statusCode === 303 ? null : bodyBuf,
+            maxRedirects: maxRedirects - 1,
+          }).then(resolve, reject);
+          return;
+        }
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          resolve({
+            status: res.statusCode || 0,
+            statusText: res.statusMessage || "",
+            headers: res.headers,
+            body: Buffer.concat(chunks),
+            url: target.href,
+          });
+        });
+        res.on("error", reject);
+      },
+    );
+    req.on("error", reject);
+    if (bodyBuf) req.write(bodyBuf);
+    req.end();
+  });
+}
+
 function buildHeaders(opts) {
   const headers = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0.0.0 Safari/537.36",
@@ -233,33 +302,27 @@ function buildHeaders(opts) {
 }
 
 async function requestText(url, opts, init = {}) {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      ...buildHeaders(opts),
-      ...(init.headers || {}),
-    },
-    redirect: "follow",
+  const res = await nodeRequest(url, {
+    method: init.method || "GET",
+    headers: { ...buildHeaders(opts), ...(init.headers || {}) },
+    body: init.body || null,
   });
-  if (!res.ok) {
+  if (res.status >= 400) {
     throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
   }
-  return res.text();
+  return res.body.toString("utf8");
 }
 
 async function requestBuffer(url, opts, init = {}) {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      ...buildHeaders(opts),
-      ...(init.headers || {}),
-    },
-    redirect: "follow",
+  const res = await nodeRequest(url, {
+    method: init.method || "GET",
+    headers: { ...buildHeaders(opts), ...(init.headers || {}) },
+    body: init.body || null,
   });
-  if (!res.ok) {
+  if (res.status >= 400) {
     throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
   }
-  return Buffer.from(await res.arrayBuffer());
+  return res.body;
 }
 
 async function apiForm(endpoint, params, opts) {
@@ -274,6 +337,13 @@ async function apiForm(endpoint, params, opts) {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,
   });
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.startsWith("<")) {
+    throw new AuthError(
+      `Authentication failed for ${endpoint}: empty or login-page response.\n` +
+        `Your ko_token is missing or expired. Re-capture the HAR while logged in, or pass --cookie "ko_token=<token>".`,
+    );
+  }
   let json;
   try {
     json = JSON.parse(text);
@@ -325,6 +395,13 @@ async function getLookbackUrl(aliveId, opts) {
   url.searchParams.set("alive_id", aliveId);
   url.searchParams.set("protection", "0");
   const text = await requestText(url.toString(), opts);
+  const lbTrimmed = text.trim();
+  if (!lbTrimmed || lbTrimmed.startsWith("<")) {
+    throw new AuthError(
+      `Authentication failed fetching lookback for ${aliveId}: empty or login-page response.\n` +
+        `Your ko_token may be missing or expired.`,
+    );
+  }
   let json;
   try {
     json = JSON.parse(text);
@@ -357,6 +434,13 @@ async function apiJson(endpoint, body, opts) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+  const jt = text.trim();
+  if (!jt || jt.startsWith("<")) {
+    throw new AuthError(
+      `Authentication failed for ${endpoint}: empty or login-page response.\n` +
+        `Your ko_token may be missing or expired.`,
+    );
+  }
   let json;
   try {
     json = JSON.parse(text);
@@ -799,7 +883,13 @@ async function main() {
     if (!opts.aliveIds.length && !opts.courseIdExplicit && !harData.courseIds.length && harData.aliveIds.length) {
       opts.aliveIds = harData.aliveIds;
     }
-    log(opts, "HAR token:", opts.cookie);
+    log(opts, "HAR token:", opts.cookie || "(none)");
+  }
+
+  if (!/ko_token=/.test(opts.cookie || "")) {
+    console.error(
+      "Warning: No ko_token found in HAR or --cookie. If the course requires login, API requests will fail with an auth error.",
+    );
   }
 
   if (!opts.host) {
@@ -893,6 +983,11 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error.message);
+  if (error instanceof AuthError) {
+    console.error("Authentication error:");
+    console.error(error.message);
+  } else {
+    console.error(error.stack || error.message);
+  }
   process.exit(1);
 });
